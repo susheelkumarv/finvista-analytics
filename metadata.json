@@ -1,0 +1,6 @@
+{
+  "name": "FinVista Analytics",
+  "description": "Sleek and modern portfolio tracker for Canadian and US stock and ETF holdings with real-time market prices, dividend tracking, and interactive performance analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
