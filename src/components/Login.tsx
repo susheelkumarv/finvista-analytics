@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { Mail, Lock, AlertCircle, Loader2, Sparkles, CheckCircle2 } from 'lucide-react';
+import FinVistaLogo from './FinVistaLogo';
 
 interface LoginProps {
-  logoUrl: string;
+  logoUrl?: string;
   onLoginSuccess: (email: string) => void;
 }
 
@@ -51,11 +52,7 @@ export default function Login({ logoUrl, onLoginSuccess }: LoginProps) {
       <div className="w-full max-w-md space-y-6">
         {/* Brand Logo Display */}
         <div className="flex flex-col items-center text-center space-y-3">
-          <img
-            src={logoUrl}
-            alt="FinVista Analytics"
-            className="h-20 sm:h-24 w-auto object-contain rounded-2xl shadow-md dark:shadow-none animate-fadeIn"
-          />
+          <FinVistaLogo logoUrl={logoUrl} size="xl" />
           <div className="h-[2px] w-12 bg-emerald-500/80 rounded-full my-1" />
           <p className="text-xs text-gray-500 dark:text-zinc-400 font-medium max-w-xs leading-relaxed">
             Institutional-grade wealth intelligence, real-time dividend cash flow tracking, and AI portfolio diagnostics.

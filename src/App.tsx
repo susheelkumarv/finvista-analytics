@@ -11,6 +11,7 @@ import DividendCalendar from './components/DividendCalendar';
 import DividendAnalytics from './components/DividendAnalytics';
 import AIInsights from './components/AIInsights';
 import Login from './components/Login';
+import FinVistaLogo from './components/FinVistaLogo';
 import { TrendingUp, Info, Sparkles, LineChart, LogOut, User, RefreshCw } from 'lucide-react';
 import finvistaLogo from './assets/images/finvista_logo_large_1782926988817.jpg';
 
@@ -187,12 +188,7 @@ export default function App() {
           
           <div className="flex items-center justify-between w-full md:w-auto gap-4">
             <div className="flex items-center">
-              <img
-                src={finvistaLogo}
-                alt="FinVista Analytics"
-                className="h-10 sm:h-12 md:h-14 w-auto object-contain rounded-xl shadow-xs dark:shadow-none transition-all duration-300 hover:scale-[1.02]"
-                referrerPolicy="no-referrer"
-              />
+              <FinVistaLogo logoUrl={finvistaLogo} size="md" />
             </div>
             
             {/* User Profile / Logout / Theme Toggle on mobile */}
