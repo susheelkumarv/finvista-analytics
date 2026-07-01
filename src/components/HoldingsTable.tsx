@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Holding, TickerInfo } from '../types';
-import { Search, Loader2, Plus, Trash2, X, AlertCircle, ShoppingCart } from 'lucide-react';
+import { Search, Loader2, Plus, Trash2, X, AlertCircle, ShoppingCart, CheckCircle2, AlertTriangle, Info } from 'lucide-react';
 import { resolveHoldingDividends } from '../utils/calculations';
+import { fetchMarketQuote } from '../utils/marketData';
 
 interface HoldingsTableProps {
   holdings: Holding[];
@@ -22,12 +23,25 @@ export default function HoldingsTable({ holdings, onAddHolding, onRemoveHolding,
   const [inputShares, setInputShares] = useState<number>(10);
   const [inputPrice, setInputPrice] = useState<number>(0);
 
+  // Toast notification state
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
+
+  // Delete confirmation modal state
+  const [deletingHolding, setDeletingHolding] = useState<Holding | null>(null);
+
   // Quick Action modal states
   const [adjustingTicker, setAdjustingTicker] = useState<string | null>(null);
   const [adjustSharesChange, setAdjustSharesChange] = useState<number>(5);
   const [adjustPrice, setAdjustPrice] = useState<number>(0);
 
   const totalValue = holdings.reduce((sum, h) => sum + (h.shares * h.currentPrice), 0);
+
+  const showNotification = (message: string, type: 'success' | 'info' | 'error' = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => {
+      setToast(null);
+    }, 4500);
+  };
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,15 +53,11 @@ export default function HoldingsTable({ holdings, onAddHolding, onRemoveHolding,
     setSearchResult(null);
 
     try {
-      const response = await fetch(`/api/quote/${ticker}`);
-      if (!response.ok) {
-        throw new Error('Ticker lookup failed');
-      }
-      const data = await response.json();
+      const data = await fetchMarketQuote(ticker);
       setSearchResult(data);
       setInputPrice(data.price);
     } catch (err) {
-      console.error(err);
+      console.error("Search failed:", err);
       setSearchError('Failed to retrieve market data. Ticker might be invalid or unavailable.');
     } finally {
       setSearching(false);
@@ -56,6 +66,9 @@ export default function HoldingsTable({ holdings, onAddHolding, onRemoveHolding,
 
   const submitAddHolding = () => {
     if (!searchResult || inputShares <= 0 || inputPrice <= 0) return;
+
+    const existingIndex = holdings.findIndex(h => h.ticker === searchResult.ticker);
+    const isUpdate = existingIndex > -1;
 
     const newHolding: Holding = {
       ticker: searchResult.ticker,
@@ -68,19 +81,43 @@ export default function HoldingsTable({ holdings, onAddHolding, onRemoveHolding,
       annualDividendPerShare: searchResult.annualDividendPerShare,
       payoutMonths: searchResult.payoutMonths || [],
       assetType: searchResult.assetType,
-      sector: searchResult.sector
+      sector: searchResult.sector,
+      payoutFrequency: searchResult.payoutFrequency,
+      payoutPerDistribution: searchResult.payoutPerDistribution
     };
 
     onAddHolding(newHolding);
+
+    showNotification(
+      isUpdate 
+        ? `Position Updated: Added ${inputShares} shares to ${searchResult.ticker}!` 
+        : `Added ${inputShares} shares of ${searchResult.ticker} (${searchResult.name}) to portfolio!`,
+      'success'
+    );
+
     // Reset states
     setSearchResult(null);
     setSearchTicker('');
+  };
+
+  const confirmDeleteHolding = () => {
+    if (!deletingHolding) return;
+    const ticker = deletingHolding.ticker;
+    onRemoveHolding(ticker);
+    showNotification(`Position ${ticker} was successfully deleted from your portfolio.`, 'info');
+    setDeletingHolding(null);
   };
 
   const handleAdjustSharesSubmit = (type: 'BUY' | 'SELL') => {
     if (!adjustingTicker) return;
     const change = type === 'BUY' ? adjustSharesChange : -adjustSharesChange;
     onAdjustShares(adjustingTicker, change, adjustPrice);
+    showNotification(
+      type === 'BUY'
+        ? `Added ${adjustSharesChange} shares to ${adjustingTicker}!`
+        : `Sold ${adjustSharesChange} shares from ${adjustingTicker}.`,
+      'success'
+    );
     setAdjustingTicker(null);
   };
 
@@ -156,7 +193,12 @@ export default function HoldingsTable({ holdings, onAddHolding, onRemoveHolding,
                     {formatCurrency(searchResult.price)}
                   </p>
                   <p className="text-[11px] text-gray-500 dark:text-zinc-400">
-                    Div Yield: <span className="font-semibold text-indigo-600 dark:text-indigo-400">{searchResult.dividendYield}%</span> (${searchResult.annualDividendPerShare.toFixed(2)}/yr)
+                    Div Yield: <span className="font-semibold text-indigo-600 dark:text-indigo-400">{searchResult.dividendYield}%</span>
+                    {searchResult.payoutPerDistribution ? (
+                      <span> • ${searchResult.payoutPerDistribution.toFixed(2)}/payout ({searchResult.payoutFrequency || 'Monthly'})</span>
+                    ) : (
+                      <span> • ${searchResult.annualDividendPerShare.toFixed(2)}/yr</span>
+                    )}
                   </p>
                 </div>
               </div>
@@ -258,7 +300,7 @@ export default function HoldingsTable({ holdings, onAddHolding, onRemoveHolding,
                   const weight = totalValue > 0 ? (val / totalValue) * 100 : 0;
                   const isGainPositive = gain >= 0;
 
-                  const { annualDiv, dividendYield: resolvedYield } = resolveHoldingDividends(h);
+                  const { annualDiv, dividendYield: resolvedYield, frequency, payoutPerDistribution } = resolveHoldingDividends(h);
 
                   return (
                     <tr key={h.ticker} className="hover:bg-gray-50/50 dark:hover:bg-zinc-850/50 transition-colors">
@@ -299,8 +341,9 @@ export default function HoldingsTable({ holdings, onAddHolding, onRemoveHolding,
                       <td className="py-3.5 px-2 text-right font-mono text-indigo-600 dark:text-indigo-400 font-semibold">
                         {resolvedYield.toFixed(2)}%
                       </td>
-                      <td className="py-3.5 px-2 text-right font-mono text-gray-900 dark:text-zinc-100 font-semibold">
-                        {formatCurrency(h.shares * annualDiv)}
+                      <td className="py-3.5 px-2 text-right font-mono">
+                        <div className="text-gray-900 dark:text-zinc-100 font-semibold">{formatCurrency(h.shares * annualDiv)}</div>
+                        <div className="text-[10px] text-gray-400 dark:text-zinc-500">{formatCurrency(payoutPerDistribution)} ({frequency.toLowerCase()})</div>
                       </td>
                       <td className="py-3.5 px-2 text-center">
                         <div className="flex items-center justify-center gap-1.5">
@@ -319,7 +362,7 @@ export default function HoldingsTable({ holdings, onAddHolding, onRemoveHolding,
                           <button
                             id={`action-remove-${h.ticker}`}
                             title="Delete Position"
-                            onClick={() => onRemoveHolding(h.ticker)}
+                            onClick={() => setDeletingHolding(h)}
                             className="p-1.5 text-zinc-500 hover:text-rose-600 hover:bg-rose-500/10 dark:text-zinc-400 rounded-lg cursor-pointer transition-all"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -334,6 +377,87 @@ export default function HoldingsTable({ holdings, onAddHolding, onRemoveHolding,
           </div>
         )}
       </div>
+      )}
+
+      {/* Confirmation Toast Banner */}
+      {toast && (
+        <div className="fixed top-20 right-4 sm:right-8 z-50 animate-fadeIn transition-all max-w-sm sm:max-w-md">
+          <div className={`flex items-center gap-3 px-4 py-3 rounded-2xl shadow-xl border backdrop-blur-md text-sm font-semibold ${
+            toast.type === 'success' 
+              ? 'bg-emerald-950/90 text-emerald-100 border-emerald-500/40 shadow-emerald-950/50' 
+              : toast.type === 'info'
+              ? 'bg-blue-950/90 text-blue-100 border-blue-500/40 shadow-blue-950/50'
+              : 'bg-rose-950/90 text-rose-100 border-rose-500/40 shadow-rose-950/50'
+          }`}>
+            {toast.type === 'success' ? (
+              <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+            ) : toast.type === 'info' ? (
+              <Info className="w-5 h-5 text-blue-400 shrink-0" />
+            ) : (
+              <AlertCircle className="w-5 h-5 text-rose-400 shrink-0" />
+            )}
+            <span className="flex-1 text-xs sm:text-sm">{toast.message}</span>
+            <button 
+              onClick={() => setToast(null)}
+              className="p-1 text-gray-400 hover:text-white rounded-lg transition-colors cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm Delete Modal */}
+      {deletingHolding && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
+            <div className="flex items-center gap-3 pb-3 border-b border-gray-100 dark:border-zinc-800">
+              <div className="p-2.5 bg-rose-500/10 text-rose-500 rounded-xl">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="font-bold text-gray-900 dark:text-zinc-50">
+                  Delete Position Confirmation
+                </h4>
+                <p className="text-xs text-gray-500 dark:text-zinc-400">
+                  Are you sure you want to delete this position from your portfolio?
+                </p>
+              </div>
+            </div>
+
+            <div className="p-4 bg-gray-50 dark:bg-zinc-950 rounded-xl border border-gray-100 dark:border-zinc-800/80 text-sm space-y-2">
+              <p className="font-bold text-gray-900 dark:text-zinc-100 text-base">
+                {deletingHolding.ticker} <span className="font-normal text-xs text-gray-500 dark:text-zinc-400">({deletingHolding.name})</span>
+              </p>
+              <div className="grid grid-cols-2 gap-2 text-xs text-gray-500 dark:text-zinc-400">
+                <div>Shares: <strong className="text-gray-900 dark:text-zinc-200">{deletingHolding.shares}</strong></div>
+                <div>Position Value: <strong className="text-gray-900 dark:text-zinc-200">{formatCurrency(deletingHolding.shares * deletingHolding.currentPrice)}</strong></div>
+              </div>
+            </div>
+
+            <p className="text-xs text-rose-500/90 font-medium">
+              * This will remove all associated gain/loss metrics and estimated dividend projections for this asset.
+            </p>
+
+            <div className="flex gap-2.5 pt-2">
+              <button
+                id="cancel-delete-btn"
+                onClick={() => setDeletingHolding(null)}
+                className="flex-1 py-2.5 bg-gray-100 dark:bg-zinc-800 hover:bg-gray-200 dark:hover:bg-zinc-700 text-gray-700 dark:text-zinc-300 font-semibold rounded-xl text-xs cursor-pointer transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                id="confirm-delete-btn"
+                onClick={confirmDeleteHolding}
+                className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-semibold rounded-xl text-xs cursor-pointer shadow-sm transition-colors flex items-center justify-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Confirm Delete
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Adjust Position dialog/drawer */}

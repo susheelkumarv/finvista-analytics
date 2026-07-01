@@ -12,6 +12,8 @@ export interface Holding {
   payoutMonths: number[]; // Months of payout (0 = Jan, 1 = Feb, ..., 11 = Dec)
   assetType: AssetType;
   sector: string;
+  payoutFrequency?: 'Weekly' | 'Semi-Monthly' | 'Monthly' | 'Quarterly' | 'Semi-Annual' | 'Annual';
+  payoutPerDistribution?: number;
 }
 
 export interface Transaction {
@@ -46,6 +48,8 @@ export interface TickerInfo {
   payoutMonths: number[];
   sector: string;
   assetType: AssetType;
+  payoutFrequency?: 'Weekly' | 'Semi-Monthly' | 'Monthly' | 'Quarterly' | 'Semi-Annual' | 'Annual';
+  payoutPerDistribution?: number;
 }
 
 export interface ChartDataPoint {

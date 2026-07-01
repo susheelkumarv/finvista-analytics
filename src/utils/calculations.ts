@@ -1,53 +1,106 @@
 import { Holding, PortfolioStats, ChartDataPoint } from '../types';
 
-export function resolveHoldingDividends(h: Holding): { annualDiv: number; dividendYield: number; payoutMonths: number[] } {
-  let annualDiv = h.annualDividendPerShare;
-  let divYield = h.dividendYield;
+export interface ResolvedDividendInfo {
+  annualDiv: number;
+  dividendYield: number;
+  payoutMonths: number[];
+  frequency: 'Weekly' | 'Semi-Monthly' | 'Monthly' | 'Quarterly' | 'Semi-Annual' | 'Annual';
+  payoutPerDistribution: number;
+  payoutsPerYear: number;
+}
+
+export function resolveHoldingDividends(h: Holding): ResolvedDividendInfo {
+  let annualDiv = h.annualDividendPerShare || 0;
+  let divYield = h.dividendYield || 0;
 
   const tickerUpper = h.ticker.toUpperCase();
-  const tickerBase = tickerUpper.split('.')[0];
+  let frequency: 'Weekly' | 'Semi-Monthly' | 'Monthly' | 'Quarterly' | 'Semi-Annual' | 'Annual' = h.payoutFrequency || 'Quarterly';
+  let payoutPerDistribution = h.payoutPerDistribution || 0;
+  let payoutsPerYear = 4;
 
-  // Specific high-yield option strategy/income ETF imputations if reported as 0 by external API
-  if (tickerUpper === 'MSTE' || tickerUpper.includes('MSTE')) {
-    divYield = 55.0;
-    annualDiv = h.currentPrice * (55.0 / 100);
-  } else if (tickerUpper.includes('EASY') || tickerUpper === 'EASY.TO') {
-    divYield = 16.1;
-    annualDiv = h.currentPrice * (16.1 / 100);
-  } else if (tickerUpper === 'HHIS' || tickerUpper.includes('HHIS')) {
-    divYield = 10.8;
-    annualDiv = h.currentPrice * (10.8 / 100);
-  }
+  // Specific ticker defaults if dividend or schedule is specific
+  if (tickerUpper.includes('EASY')) {
+    // EASY.TO pays $0.31 semi-monthly (24 payouts per year) -> $0.31 * 24 = $7.44 / yr
+    payoutPerDistribution = 0.31;
+    frequency = 'Semi-Monthly';
+    payoutsPerYear = 24;
+    annualDiv = payoutPerDistribution * payoutsPerYear; // 7.44
+    divYield = h.currentPrice > 0 ? (annualDiv / h.currentPrice) * 100 : 32.19;
+  } else if (tickerUpper.includes('HHIS')) {
+    // HHIS pays $0.27 monthly (12 payouts per year) -> $0.27 * 12 = $3.24 / yr
+    payoutPerDistribution = 0.27;
+    frequency = 'Monthly';
+    payoutsPerYear = 12;
+    annualDiv = payoutPerDistribution * payoutsPerYear; // 3.24
+    divYield = h.currentPrice > 0 ? (annualDiv / h.currentPrice) * 100 : 26.02;
+  } else if (tickerUpper.includes('MSTE')) {
+    // MSTE pays $0.10 monthly (12 payouts per year) -> $0.10 * 12 = $1.20 / yr
+    payoutPerDistribution = 0.10;
+    frequency = 'Monthly';
+    payoutsPerYear = 12;
+    annualDiv = payoutPerDistribution * payoutsPerYear; // 1.20
+    divYield = h.currentPrice > 0 ? (annualDiv / h.currentPrice) * 100 : 7.74;
+  } else {
+    // Determine frequency for other tickers
+    const monthlyTickers = ["O", "JEPI", "JEPQ", "MAIN", "PFF", "AGNC", "SDIV", "SRET"];
+    const isMonthly = monthlyTickers.some(t => tickerUpper.includes(t)) || (h.payoutMonths && h.payoutMonths.length === 12);
+    const isWeekly = tickerUpper.includes("WEEK") || tickerUpper.includes("BKCC") || tickerUpper.includes("YMAX");
 
-  // General fallback for ANY ticker that has zero dividend rate reported
-  if (annualDiv <= 0) {
-    if (divYield > 0) {
-      annualDiv = h.currentPrice * (divYield / 100);
+    if (isWeekly) {
+      frequency = 'Weekly';
+      payoutsPerYear = 52;
+    } else if (isMonthly) {
+      frequency = 'Monthly';
+      payoutsPerYear = 12;
+    } else if (h.payoutMonths && h.payoutMonths.length === 2) {
+      frequency = 'Semi-Annual';
+      payoutsPerYear = 2;
+    } else if (h.payoutMonths && h.payoutMonths.length === 1) {
+      frequency = 'Annual';
+      payoutsPerYear = 1;
     } else {
-      // Give every holding in the portfolio a fallback dividend yield so they participate in income tracking
-      const defaultYield = h.assetType === 'ETF' ? 4.8 : (h.assetType === 'REIT' ? 5.8 : 2.4);
-      divYield = defaultYield;
-      annualDiv = h.currentPrice * (defaultYield / 100);
+      frequency = 'Quarterly';
+      payoutsPerYear = 4;
+    }
+
+    if (annualDiv <= 0) {
+      if (divYield > 0 && h.currentPrice > 0) {
+        annualDiv = h.currentPrice * (divYield / 100);
+      } else {
+        const defaultYield = h.assetType === 'ETF' ? 4.8 : (h.assetType === 'REIT' ? 5.8 : 2.4);
+        divYield = defaultYield;
+        annualDiv = h.currentPrice > 0 ? h.currentPrice * (defaultYield / 100) : defaultYield;
+      }
+    } else if (divYield <= 0 && h.currentPrice > 0) {
+      divYield = (annualDiv / h.currentPrice) * 100;
+    }
+
+    if (payoutPerDistribution <= 0 && payoutsPerYear > 0) {
+      payoutPerDistribution = annualDiv / payoutsPerYear;
     }
   }
 
   // Resolve payout months
   let payoutM = h.payoutMonths || [];
   if (payoutM.length === 0) {
-    const monthlyTickers = ["O", "JEPI", "JEPQ", "MAIN", "PFF", "AGNC", "SDIV", "SRET", "MSTE", "HHIS", "EASY"];
-    const isMonthly = monthlyTickers.some(t => tickerBase.includes(t)) || tickerUpper.includes("SDIV") || tickerUpper.includes("JEPI");
-    
-    if (isMonthly) {
+    if (frequency === 'Weekly' || frequency === 'Semi-Monthly' || frequency === 'Monthly') {
       payoutM = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+    } else if (frequency === 'Semi-Annual') {
+      payoutM = [5, 11];
+    } else if (frequency === 'Annual') {
+      payoutM = [11];
     } else {
-      payoutM = [2, 5, 8, 11]; // default quarterly (Mar, Jun, Sep, Dec)
+      payoutM = [2, 5, 8, 11]; // default quarterly
     }
   }
 
   return {
     annualDiv,
     dividendYield: divYield,
-    payoutMonths: payoutM
+    payoutMonths: payoutM,
+    frequency,
+    payoutPerDistribution: parseFloat(payoutPerDistribution.toFixed(4)),
+    payoutsPerYear
   };
 }
 
@@ -165,22 +218,35 @@ export function calculateDividendCalendar(holdings: Holding[]): MonthlyDividendP
   }));
 
   holdings.forEach(h => {
-    const { annualDiv, payoutMonths } = resolveHoldingDividends(h);
+    const { annualDiv, payoutMonths, frequency } = resolveHoldingDividends(h);
 
     if (annualDiv > 0 && payoutMonths.length > 0) {
-      // Calculate payment per payout occasion
-      const paymentOccasions = payoutMonths.length;
-      const payoutAmount = (h.shares * annualDiv) / paymentOccasions;
+      if (frequency === 'Semi-Monthly') {
+        // Semi-monthly pays 2 times per month across 12 months (24 payouts)
+        const monthlyAmount = (h.shares * annualDiv) / 12;
+        payoutMonths.forEach(mIdx => {
+          if (mIdx >= 0 && mIdx < 12) {
+            calendar[mIdx].amount += monthlyAmount;
+            calendar[mIdx].tickers.push({
+              ticker: h.ticker,
+              amount: parseFloat(monthlyAmount.toFixed(2))
+            });
+          }
+        });
+      } else {
+        const paymentOccasions = payoutMonths.length;
+        const payoutAmount = (h.shares * annualDiv) / paymentOccasions;
 
-      payoutMonths.forEach(mIdx => {
-        if (mIdx >= 0 && mIdx < 12) {
-          calendar[mIdx].amount += payoutAmount;
-          calendar[mIdx].tickers.push({
-            ticker: h.ticker,
-            amount: parseFloat(payoutAmount.toFixed(2))
-          });
-        }
-      });
+        payoutMonths.forEach(mIdx => {
+          if (mIdx >= 0 && mIdx < 12) {
+            calendar[mIdx].amount += payoutAmount;
+            calendar[mIdx].tickers.push({
+              ticker: h.ticker,
+              amount: parseFloat(payoutAmount.toFixed(2))
+            });
+          }
+        });
+      }
     }
   });
 

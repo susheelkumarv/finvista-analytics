@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Holding } from '../types';
 import { Sparkles, Loader2, BookOpen, ChevronRight, AlertCircle } from 'lucide-react';
+import { generateLocalPortfolioInsights } from '../utils/aiInsightGenerator';
 
 interface AIInsightsProps {
   holdings: Holding[];
@@ -47,15 +48,21 @@ export default function AIInsights({ holdings }: AIInsightsProps) {
         body: JSON.stringify({ holdings })
       });
 
-      if (!response.ok) {
-        throw new Error("Failed to reach insights engine");
+      if (response.ok) {
+        const data = await response.json();
+        if (data && data.insight) {
+          setInsight(data.insight);
+          return;
+        }
       }
-
-      const data = await response.json();
-      setInsight(data.insight);
+      // If server returned non-ok or empty insight (e.g. Netlify static hosting), fallback gracefully to local generator
+      const localInsight = generateLocalPortfolioInsights(holdings);
+      setInsight(localInsight);
     } catch (err) {
-      console.error(err);
-      setError("Unable to compile insights at this time. Please make sure the backend server is online.");
+      console.warn("Backend insight fetch failed or offline; generating client-side portfolio analysis:", err);
+      // Seamless fallback for Netlify and offline deployment environments
+      const localInsight = generateLocalPortfolioInsights(holdings);
+      setInsight(localInsight);
     } finally {
       setLoading(false);
     }

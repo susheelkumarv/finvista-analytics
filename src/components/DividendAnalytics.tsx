@@ -111,24 +111,9 @@ export default function DividendAnalytics({ holdings }: DividendAnalyticsProps) 
       let distRate = 0;
       let frequency = 'N/A';
       if (holding) {
-        const { annualDiv, payoutMonths } = resolveHoldingDividends(holding);
-        const len = payoutMonths.length;
-        if (len > 0) {
-          distRate = annualDiv / len;
-          if (len === 12) {
-            frequency = 'Monthly';
-          } else if (len === 24) {
-            frequency = 'Semi-Monthly';
-          } else if (len === 4) {
-            frequency = 'Quarterly';
-          } else if (len === 2) {
-            frequency = 'Semi-Annual';
-          } else if (len === 1) {
-            frequency = 'Annual';
-          } else {
-            frequency = `${len}x / Yr`;
-          }
-        }
+        const { frequency: resolvedFreq, payoutPerDistribution } = resolveHoldingDividends(holding);
+        distRate = payoutPerDistribution;
+        frequency = resolvedFreq;
       }
 
       return {

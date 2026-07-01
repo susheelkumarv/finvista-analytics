@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Holding } from './types';
 import { INITIAL_HOLDINGS } from './data/mockAssets';
 import { calculatePortfolioStats } from './utils/calculations';
+import { fetchMarketQuote } from './utils/marketData';
 import ThemeToggle from './components/ThemeToggle';
 import StatsCards from './components/StatsCards';
 import PerformanceCharts from './components/PerformanceCharts';
@@ -48,22 +49,19 @@ export default function App() {
       const updated = await Promise.all(
         currentHoldings.map(async (holding) => {
           try {
-            const res = await fetch(`/api/quote/${encodeURIComponent(holding.ticker)}`);
-            if (res.ok) {
-              const data = await res.json();
-              if (data && data.price > 0) {
-                return {
-                  ...holding,
-                  name: data.name || holding.name,
-                  currentPrice: data.price,
-                  prevClose: data.prevClose || holding.prevClose,
-                  dividendYield: typeof data.dividendYield === 'number' ? data.dividendYield : holding.dividendYield,
-                  annualDividendPerShare: typeof data.annualDividendPerShare === 'number' ? data.annualDividendPerShare : holding.annualDividendPerShare,
-                  payoutMonths: Array.isArray(data.payoutMonths) ? data.payoutMonths : holding.payoutMonths,
-                  sector: data.sector || holding.sector,
-                  assetType: data.assetType || holding.assetType
-                };
-              }
+            const data = await fetchMarketQuote(holding.ticker);
+            if (data && data.price > 0) {
+              return {
+                ...holding,
+                name: data.name || holding.name,
+                currentPrice: data.price,
+                prevClose: data.prevClose || holding.prevClose,
+                dividendYield: typeof data.dividendYield === 'number' ? data.dividendYield : holding.dividendYield,
+                annualDividendPerShare: typeof data.annualDividendPerShare === 'number' ? data.annualDividendPerShare : holding.annualDividendPerShare,
+                payoutMonths: Array.isArray(data.payoutMonths) && data.payoutMonths.length > 0 ? data.payoutMonths : holding.payoutMonths,
+                sector: data.sector || holding.sector,
+                assetType: data.assetType || holding.assetType
+              };
             }
           } catch (err) {
             console.warn(`Failed to sync quote for ${holding.ticker}:`, err);
